@@ -11,6 +11,7 @@ interface MultiImageUploadProps {
 export default function MultiImageUpload({ images, onChange, maxImages = 10 }: MultiImageUploadProps) {
   const { getAuthHeaders } = useAuth();
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{current: number, total: number} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -18,15 +19,20 @@ export default function MultiImageUpload({ images, onChange, maxImages = 10 }: M
     if (files.length === 0) return;
 
     if (images.length + files.length > maxImages) {
-      alert(`Solo puedes subir hasta ${maxImages} imágenes.`);
+      alert(`Solo puedes subir hasta ${maxImages} imágenes. Has seleccionado ${files.length} y ya tienes ${images.length}.`);
       return;
     }
 
     setUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
 
     try {
       const newImages = [...images];
+      let current = 0;
       for (const file of files) {
+        current++;
+        setUploadProgress({ current, total: files.length });
+        
         const formData = new FormData();
         formData.append('image', file);
 
@@ -41,7 +47,9 @@ export default function MultiImageUpload({ images, onChange, maxImages = 10 }: M
           const data = await res.json();
           newImages.push({ image_url: data.url });
         } else {
-          console.error('Error uploading file', file.name);
+          const errData = await res.json();
+          console.error('Error uploading file', file.name, errData);
+          alert(`Error al subir ${file.name}: ${errData.error || 'Desconocido'}`);
         }
       }
       onChange(newImages);
@@ -50,6 +58,7 @@ export default function MultiImageUpload({ images, onChange, maxImages = 10 }: M
       alert('Error de conexión al subir imágenes');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -98,14 +107,25 @@ export default function MultiImageUpload({ images, onChange, maxImages = 10 }: M
           className={`border-2 border-dashed border-zinc-300 rounded-xl p-6 text-center cursor-pointer hover:border-zinc-400 hover:bg-zinc-50 transition-colors flex flex-col items-center justify-center ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {uploading ? (
-            <div className="w-6 h-6 border-2 border-zinc-400 border-t-zinc-900 rounded-full animate-spin mb-2" />
+            <>
+              <div className="w-6 h-6 border-2 border-zinc-400 border-t-zinc-900 rounded-full animate-spin mb-2" />
+              <p className="text-sm font-medium text-zinc-700">
+                Subiendo {uploadProgress?.current} de {uploadProgress?.total}...
+              </p>
+              <div className="w-full max-w-xs bg-zinc-200 rounded-full h-1.5 mt-3">
+                <div 
+                  className="bg-zinc-900 h-1.5 rounded-full transition-all duration-300" 
+                  style={{ width: `${((uploadProgress?.current || 0) / (uploadProgress?.total || 1)) * 100}%` }}
+                ></div>
+              </div>
+            </>
           ) : (
-            <Upload className="w-6 h-6 text-zinc-400 mb-2" />
+            <>
+              <Upload className="w-6 h-6 text-zinc-400 mb-2" />
+              <p className="text-sm font-medium text-zinc-700">Subir imágenes</p>
+              <p className="text-xs text-zinc-500 mt-1">Puedes seleccionar varias a la vez (JPG, PNG)</p>
+            </>
           )}
-          <p className="text-sm font-medium text-zinc-700">
-            {uploading ? 'Subiendo...' : 'Subir imágenes'}
-          </p>
-          <p className="text-xs text-zinc-500 mt-1">Puedes seleccionar varias a la vez</p>
         </div>
       )}
 

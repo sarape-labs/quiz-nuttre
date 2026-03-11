@@ -48,7 +48,7 @@ export default function QuizEditor() {
     slug: '',
     number_of_questions: 5,
     ai_prompt: 'Interpreta las respuestas del usuario y genera una lectura motivadora, invitándolo a seguir adelante.',
-    ai_max_words: 100,
+    ai_max_words: 50,
     redirect_potential: '',
     redirect_not_interested: '',
     result_closing_text: 'Solo algunas personas tienen el perfil adecuado para aprovechar esta oportunidad al máximo. Descubre si tienes lo necesario para dar el siguiente paso.',
@@ -283,6 +283,7 @@ export default function QuizEditor() {
             <span className="text-sm text-red-500 font-medium">{validationError}</span>
           )}
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || saved}
             className={`inline-flex items-center gap-2 px-6 py-2.5 text-white text-sm font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50 ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-zinc-900 hover:bg-zinc-800'}`}

@@ -31,7 +31,16 @@ const upload = multer({
 
 const router = express.Router();
 
-router.post('/', requireAuth, upload.single('image'), async (req, res) => {
+router.post('/', requireAuth, (req, res, next) => {
+  upload.single('image')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ error: `Error de subida: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No se subió ninguna imagen' });
   }

@@ -34,7 +34,8 @@ export default function ImageUpload({ value, onChange, label, recommendedSize }:
         const data = await res.json();
         onChange(data.url);
       } else {
-        alert('Error al subir la imagen');
+        const errData = await res.json();
+        alert(`Error al subir la imagen: ${errData.error || 'Desconocido'}`);
       }
     } catch (error) {
       console.error('Upload error:', error);

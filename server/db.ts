@@ -39,7 +39,7 @@ db.exec(`
     cover_image TEXT,
     number_of_questions INTEGER DEFAULT 5,
     ai_prompt TEXT,
-    ai_max_words INTEGER DEFAULT 100,
+    ai_max_words INTEGER DEFAULT 50,
     redirect_potential TEXT,
     redirect_not_interested TEXT,
     theme TEXT,
@@ -130,7 +130,7 @@ addColumn('quizzes', 'subtitle', 'TEXT');
 addColumn('quizzes', 'cover_image', 'TEXT');
 addColumn('quizzes', 'number_of_questions', 'INTEGER DEFAULT 5');
 addColumn('quizzes', 'ai_prompt', 'TEXT');
-addColumn('quizzes', 'ai_max_words', 'INTEGER DEFAULT 100');
+addColumn('quizzes', 'ai_max_words', 'INTEGER DEFAULT 50');
 addColumn('quizzes', 'redirect_potential', 'TEXT');
 addColumn('quizzes', 'redirect_not_interested', 'TEXT');
 addColumn('quizzes', 'theme', 'TEXT');
