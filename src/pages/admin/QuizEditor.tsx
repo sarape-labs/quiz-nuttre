@@ -209,7 +209,7 @@ export default function QuizEditor() {
       }
 
       // Save Questions and Results in parallel
-      await Promise.all([
+      const [questionsRes, resultsRes] = await Promise.all([
         fetch(`/api/quizzes/${quizId}/questions`, {
           method: 'PUT',
           headers: { 
@@ -229,6 +229,15 @@ export default function QuizEditor() {
           credentials: 'include'
         })
       ]);
+
+      if (!questionsRes.ok) {
+        const err = await questionsRes.json();
+        throw new Error(err.error || 'Error al guardar las preguntas');
+      }
+      if (!resultsRes.ok) {
+        const err = await resultsRes.json();
+        throw new Error(err.error || 'Error al guardar los resultados');
+      }
 
       if (isNew) {
         setIsDirty(false);
@@ -690,6 +699,7 @@ export default function QuizEditor() {
           </button>
         )}
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving || saved}
           className={`inline-flex items-center gap-2 px-6 py-2.5 text-white text-sm font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50 ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-zinc-900 hover:bg-zinc-800'}`}
