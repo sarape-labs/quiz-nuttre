@@ -8,8 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.join(__dirname, '..', 'data', 'database.sqlite');
-const dataDir = path.join(__dirname, '..', 'data');
+const dbPath = '/data/database.sqlite';
+const dataDir = '/data';
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });

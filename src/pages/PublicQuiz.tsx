@@ -38,7 +38,7 @@ export default function PublicQuiz() {
 
   const fetchQuiz = async () => {
     try {
-      const res = await fetch(`/api/public/quiz/${slug}`);
+      const res = await fetch(`/api/public/quiz/${encodeURIComponent(slug)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.questions) {
