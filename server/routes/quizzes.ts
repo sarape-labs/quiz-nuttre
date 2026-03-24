@@ -78,7 +78,7 @@ router.post('/', (req, res) => {
         VALUES (?, ?, ?, ?)
       `);
       result_images.slice(0, 10).forEach((img: any, index: number) => {
-        insertResultImage.run(uuidv4(), id, img.image_url, index);
+        insertResultImage.run(uuidv4(), id, img.image_url || img, index);
       });
     }
 
@@ -290,6 +290,8 @@ router.delete('/:id/permanent', (req, res) => {
   }
 });
 
+import { GoogleGenAI } from '@google/genai';
+
 // Generate AI analysis for a quiz
 router.post('/:id/ai-analysis', async (req, res) => {
   try {
@@ -313,7 +315,25 @@ router.post('/:id/ai-analysis', async (req, res) => {
 
     const promptContext = `Analiza stats de "${quiz.title}": Aperturas:${totalOpens}, Inicios:${totalStarts}, Completados:${totalCompletes}, Leads:${totalLeads}. Respuestas/pregunta:${JSON.stringify(questionDrops)}. Da observaciones y tips de conversión en Markdown. Max 80 palabras.`;
 
-    res.json({ promptContext });
+    let aiInterpretation = null;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (apiKey) {
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite-preview",
+          contents: promptContext,
+          config: {
+            systemInstruction: "Eres un experto analista de datos. Responde de forma concisa en máximo 80 palabras.",
+          }
+        });
+        aiInterpretation = response.text;
+      } catch (e) {
+        console.error('AI error in backend:', e);
+      }
+    }
+
+    res.json({ promptContext, aiInterpretation });
   } catch (error) {
     console.error('AI Analysis error:', error);
     res.status(500).json({ error: 'Failed to generate analysis' });

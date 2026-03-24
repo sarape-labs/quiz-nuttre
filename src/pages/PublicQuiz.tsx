@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { GoogleGenAI } from '@google/genai';
 
 export default function PublicQuiz() {
   const [searchParams] = useSearchParams();
@@ -113,33 +112,6 @@ export default function PublicQuiz() {
 
       if (res.ok) {
         const data = await res.json();
-        
-        const apiKey = (window as any).process?.env?.GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
-        console.log('Checking AI generation conditions:', {
-          hasPromptContext: !!data.promptContext,
-          hasApiKey: !!apiKey
-        });
-        
-        if (data.promptContext && apiKey) {
-          try {
-            console.log('Starting AI generation...');
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({
-              model: "gemini-3.1-flash-lite-preview",
-              contents: data.promptContext,
-              config: {
-                systemInstruction: "Eres un experto. Responde de forma concisa en máximo 80 palabras.",
-              }
-            });
-            console.log('AI generation successful');
-            data.aiInterpretation = response.text;
-          } catch (aiError) {
-            console.error('AI Generation Error:', aiError);
-            throw new Error('AI_ERROR');
-          }
-        } else if (data.promptContext) {
-          console.warn('Prompt context exists but GEMINI_API_KEY is missing');
-        }
         
         if (quiz?.result_images && quiz.result_images.length > 0) {
           const randomIndex = Math.floor(Math.random() * quiz.result_images.length);

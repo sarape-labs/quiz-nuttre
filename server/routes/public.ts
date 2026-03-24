@@ -29,6 +29,8 @@ router.get('/quiz/:slug', (req, res) => {
   }
 });
 
+import { GoogleGenAI } from '@google/genai';
+
 // Submit a response
 router.post('/quiz/:id/response', (req, res) => {
   const { question_id, answer, session_id } = req.body;
@@ -110,8 +112,26 @@ router.post('/quiz/:id/result', async (req, res) => {
 
     // 6. Return promptContext for AI interpretation
     let promptContext = null;
+    let aiInterpretation = null;
     if (quiz.ai_prompt) {
       promptContext = `Quiz:"${quiz.title}".Respuestas:${responses.map((r: any) => `P${r.order_number}:${r.answer === 1 ? 'Sí' : 'No'}`).join(',')}.Instrucciones:${quiz.ai_prompt}.Responde en max 80 palabras.`;
+      
+      const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+      if (apiKey) {
+        try {
+          const ai = new GoogleGenAI({ apiKey });
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite-preview",
+            contents: promptContext,
+            config: {
+              systemInstruction: "Eres un experto. Responde de forma concisa en máximo 80 palabras.",
+            }
+          });
+          aiInterpretation = response.text;
+        } catch (e) {
+          console.error('AI error in backend:', e);
+        }
+      }
     }
 
     // 7. Determine redirect URL based on score
@@ -129,6 +149,7 @@ router.post('/quiz/:id/result', async (req, res) => {
       combination,
       resultText: finalResultText,
       promptContext,
+      aiInterpretation,
       redirectUrl: redirectUrl || null
     });
 
