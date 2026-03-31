@@ -80,8 +80,8 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   let { title, subtitle, cover_image, slug, number_of_questions = 5, ai_prompt, ai_max_words = 100, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images = [], quiz_type = 'binary' } = req.body;
   
-  if (ai_prompt && ai_prompt.length > 500) {
-    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 500 caracteres.' });
+  if (ai_prompt && ai_prompt.length > 1000) {
+    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 1000 caracteres.' });
   }
 
   const id = uuidv4();
@@ -138,8 +138,8 @@ router.put('/:id', (req, res) => {
 
   let { title, subtitle, cover_image, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images, quiz_type } = req.body;
   
-  if (ai_prompt && ai_prompt.length > 500) {
-    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 500 caracteres.' });
+  if (ai_prompt && ai_prompt.length > 1000) {
+    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 1000 caracteres.' });
   }
 
   if (!slug || slug.trim() === '') {

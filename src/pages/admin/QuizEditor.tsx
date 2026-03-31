@@ -660,12 +660,12 @@ export default function QuizEditor() {
               value={quiz.ai_prompt}
               onChange={e => setQuiz({...quiz, ai_prompt: e.target.value})}
               rows={3}
-              maxLength={500}
+              maxLength={1000}
               className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm"
             />
             <div className="mt-1 flex justify-between items-center">
               <p className="text-xs text-zinc-500">Instrucciones para generar el resultado personalizado.</p>
-              <span className="text-xs text-zinc-400">{quiz.ai_prompt?.length || 0}/500</span>
+              <span className="text-xs text-zinc-400">{quiz.ai_prompt?.length || 0}/1000</span>
             </div>
           </div>
           
