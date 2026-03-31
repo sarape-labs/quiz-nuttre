@@ -27,7 +27,7 @@ export default function AdminLayout() {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-zinc-200 flex flex-col">
         <div className="p-6 border-b border-zinc-200">
-          <h1 className="text-3xl font-bold text-zinc-900 ">Quiz</h1>
+          <h1 className="text-3xl font-bold text-zinc-900 ">Quiz V2</h1>
           <p className="text-xs text-zinc-500 mt-1 font-medium">by <span className="tracking-normal">Sarape Labs</span></p>
         </div>
         

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, BarChart2, Sparkles, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Markdown from 'react-markdown';
+import { GoogleGenAI } from '@google/genai';
 import { useAuth } from '../../context/AuthContext';
 import QuizNav from '../../components/QuizNav';
 
@@ -61,11 +62,24 @@ export default function AnalyticsView() {
       if (res.ok) {
         const data = await res.json();
         
-        if (data.aiInterpretation) {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (data.promptContext && apiKey) {
+          console.log('Starting AI analysis generation...');
+          const ai = new GoogleGenAI({ apiKey });
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite-preview",
+            contents: data.promptContext,
+            config: {
+              systemInstruction: "Eres un experto analista de datos. Responde de forma concisa.",
+            }
+          });
           console.log('AI analysis successful');
-          setAiAnalysis(data.aiInterpretation || '');
+          setAiAnalysis(response.text || '');
         } else {
-          console.warn('Missing aiInterpretation');
+          console.warn('Missing promptContext or GEMINI_API_KEY', {
+            hasPromptContext: !!data.promptContext,
+            hasApiKey: !!apiKey
+          });
           setErrorMsg('API key no configurada o error en el prompt');
         }
       } else {

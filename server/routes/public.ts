@@ -1,6 +1,7 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.ts';
+import { GoogleGenAI } from '@google/genai';
 
 const router = express.Router();
 
@@ -14,8 +15,11 @@ router.get('/quiz/:slug', (req, res) => {
       return res.status(404).json({ error: 'Quiz not found' });
     }
 
-    const questionsStmt = db.prepare('SELECT id, question_text, positive_text, negative_text, order_number FROM questions WHERE quiz_id = ? ORDER BY order_number ASC');
-    const questions = questionsStmt.all(quiz.id);
+    const questionsStmt = db.prepare('SELECT id, question_text, positive_text, negative_text, order_number, question_type, options FROM questions WHERE quiz_id = ? ORDER BY order_number ASC');
+    const questions = questionsStmt.all(quiz.id).map((q: any) => ({
+      ...q,
+      options: q.options ? JSON.parse(q.options) : []
+    }));
 
     const resultImagesStmt = db.prepare('SELECT id, image_url, order_index FROM result_images WHERE quiz_id = ? ORDER BY order_index ASC');
     const result_images = resultImagesStmt.all(quiz.id);
@@ -28,8 +32,6 @@ router.get('/quiz/:slug', (req, res) => {
     res.status(500).json({ error: 'Failed to fetch quiz' });
   }
 });
-
-import { GoogleGenAI } from '@google/genai';
 
 // Submit a response
 router.post('/quiz/:id/response', (req, res) => {
@@ -76,13 +78,16 @@ router.post('/quiz/:id/result', async (req, res) => {
   try {
     // 1. Get all responses for this session
     const responsesStmt = db.prepare(`
-      SELECT r.answer, q.order_number, q.question_text 
+      SELECT r.answer, q.order_number, q.question_text, q.question_type, q.options 
       FROM responses r
       JOIN questions q ON r.question_id = q.id
       WHERE r.session_id = ? AND r.quiz_id = ?
       ORDER BY q.order_number ASC
     `);
-    const responses = responsesStmt.all(session_id, quizId);
+    const responses = responsesStmt.all(session_id, quizId).map((r: any) => ({
+      ...r,
+      options: r.options ? JSON.parse(r.options) : []
+    }));
 
     // 2. Generate combination string (e.g., '10101')
     const combination = responses.map((r: any) => r.answer).join('');
@@ -97,46 +102,93 @@ router.post('/quiz/:id/result', async (req, res) => {
 
     let finalResultText = predefinedResult ? predefinedResult.result_text : null;
 
-    // 5. If no predefined result, generate automatic text
-    if (!finalResultText) {
-      const positiveAnswers = responses.filter((r: any) => r.answer === 1).map((r: any) => r.order_number);
-      if (positiveAnswers.length === 0) {
-        finalResultText = "El usuario no respondió sí en ninguna pregunta.";
-      } else if (positiveAnswers.length === 1) {
-        finalResultText = `El usuario contestó que sí solo a la pregunta ${positiveAnswers[0]}.`;
-      } else {
-        const last = positiveAnswers.pop();
-        finalResultText = `El usuario contestó que sí a ${positiveAnswers.join(', ')} y ${last}.`;
-      }
-    }
-
-    // 6. Return promptContext for AI interpretation
-    let promptContext = null;
-    let aiInterpretation = null;
-    if (quiz.ai_prompt) {
-      promptContext = `Quiz:"${quiz.title}".Respuestas:${responses.map((r: any) => `P${r.order_number}:${r.answer === 1 ? 'Sí' : 'No'}`).join(',')}.Instrucciones:${quiz.ai_prompt}.Responde en max 80 palabras.`;
+    // 5. Try AI Generation if ai_prompt exists and no predefined result
+    if (!finalResultText && quiz.ai_prompt && quiz.ai_prompt.trim() !== '') {
+      const apiKey = process.env.GEMINI_API_KEY;
       
-      const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
       if (apiKey) {
         try {
+          const answersText = responses.map((r: any) => {
+            if (r.question_type === 'multiple_choice') {
+              const opt = r.options[r.answer];
+              const optionText = typeof opt === 'object' ? opt.text : (opt || r.answer);
+              return `P${r.order_number}: ${optionText}`;
+            }
+            return `P${r.order_number}: ${r.answer === 1 ? 'Sí' : 'No'}`;
+          }).join(' | ');
+
+          let promptContext = '';
+          if (quiz.quiz_type === 'multiple_choice') {
+            const profileScores: Record<string, number> = {};
+            responses.forEach((r: any) => {
+              if (r.question_type === 'multiple_choice' && r.options && r.options[r.answer]) {
+                const opt = r.options[r.answer];
+                const profile = typeof opt === 'object' && opt.profile ? opt.profile.trim() : null;
+                if (profile) {
+                  profileScores[profile] = (profileScores[profile] || 0) + 1;
+                }
+              }
+            });
+            
+            let dominantProfile = 'Indefinido';
+            let maxScore = -1;
+            Object.entries(profileScores).forEach(([profile, score]) => {
+              if (score > maxScore) {
+                maxScore = score;
+                dominantProfile = profile;
+              }
+            });
+            
+            promptContext = `El usuario ha completado el quiz "${quiz.title}".\nRespuestas seleccionadas: ${answersText}.\nPerfil dominante detectado por el sistema: ${dominantProfile}.\n\nInstrucciones: ${quiz.ai_prompt}`;
+          } else {
+            promptContext = `Quiz:"${quiz.title}".\nRespuestas:${answersText}.\nInstrucciones:${quiz.ai_prompt}.`;
+          }
+
+          const systemInstruction = `Eres un experto. Responde de forma concisa en máximo ${quiz.ai_max_words || 50} palabras.`;
+
           const ai = new GoogleGenAI({ apiKey });
           const response = await ai.models.generateContent({
             model: "gemini-3.1-flash-lite-preview",
             contents: promptContext,
             config: {
-              systemInstruction: "Eres un experto. Responde de forma concisa en máximo 80 palabras.",
+              systemInstruction: systemInstruction,
             }
           });
-          aiInterpretation = response.text;
-        } catch (e) {
-          console.error('AI error in backend:', e);
+          
+          if (response.text) {
+            finalResultText = response.text;
+          }
+        } catch (aiError) {
+          console.error('AI Generation Error in backend:', aiError);
+        }
+      } else {
+        console.warn('GEMINI_API_KEY is missing in backend environment variables');
+      }
+    }
+
+    // 6. Generic Fallback if both predefined and AI failed/were missing
+    if (!finalResultText) {
+      if (quiz.quiz_type === 'multiple_choice') {
+        finalResultText = "Has completado el quiz. Hemos registrado tus respuestas.";
+      } else {
+        const positiveAnswers = responses.filter((r: any) => r.answer === 1).map((r: any) => r.order_number);
+        if (positiveAnswers.length === 0) {
+          finalResultText = "El usuario no respondió sí en ninguna pregunta.";
+        } else if (positiveAnswers.length === 1) {
+          finalResultText = `El usuario contestó que sí solo a la pregunta ${positiveAnswers[0]}.`;
+        } else {
+          const last = positiveAnswers.pop();
+          finalResultText = `El usuario contestó que sí a ${positiveAnswers.join(', ')} y ${last}.`;
         }
       }
     }
 
     // 7. Determine redirect URL based on score
-    const score = responses.filter((r: any) => r.answer === 1).length;
-    const isHighPotential = score >= (quiz.number_of_questions / 2);
+    let isHighPotential = true;
+    if (quiz.quiz_type !== 'multiple_choice') {
+      const score = responses.filter((r: any) => r.answer === 1).length;
+      isHighPotential = score >= (quiz.number_of_questions / 2);
+    }
     
     // Use fallback if one of the URLs is missing
     let redirectUrl = isHighPotential ? quiz.redirect_potential : quiz.redirect_not_interested;
@@ -148,8 +200,6 @@ router.post('/quiz/:id/result', async (req, res) => {
       success: true,
       combination,
       resultText: finalResultText,
-      promptContext,
-      aiInterpretation,
       redirectUrl: redirectUrl || null
     });
 

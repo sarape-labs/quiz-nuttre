@@ -135,6 +135,11 @@ addColumn('quizzes', 'redirect_potential', 'TEXT');
 addColumn('quizzes', 'redirect_not_interested', 'TEXT');
 addColumn('quizzes', 'theme', 'TEXT');
 addColumn('quizzes', 'status', "TEXT DEFAULT 'active'");
+addColumn('quizzes', 'quiz_type', "TEXT DEFAULT 'binary'");
+addColumn('quizzes', 'created_by', 'TEXT');
+
+addColumn('questions', 'question_type', "TEXT DEFAULT 'binary'");
+addColumn('questions', 'options', "TEXT");
 
 // Seed initial superadmin user
 const stmt = db.prepare('SELECT * FROM users WHERE email = ?');

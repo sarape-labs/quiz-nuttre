@@ -91,19 +91,6 @@ export default function PublicQuiz() {
     setResultError('');
     
     try {
-      const cachedResult = sessionStorage.getItem(`quiz_result_${quiz.id}_${sessionId}`);
-      if (cachedResult) {
-        const data = JSON.parse(cachedResult);
-        setResult(data);
-        if (quiz?.result_images && quiz.result_images.length > 0) {
-          const randomIndex = Math.floor(Math.random() * quiz.result_images.length);
-          setRandomResultImage(quiz.result_images[randomIndex].image_url);
-        }
-        setStep('result');
-        setGeneratingResult(false);
-        return;
-      }
-
       const res = await fetch(`/api/public/quiz/${quiz.id}/result`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,12 +100,17 @@ export default function PublicQuiz() {
       if (res.ok) {
         const data = await res.json();
         
+        // The backend now handles Gemini directly and returns it in resultText.
+        // We map it to aiInterpretation so the UI renders it via Markdown.
+        if (data.resultText) {
+          data.aiInterpretation = data.resultText;
+        }
+        
         if (quiz?.result_images && quiz.result_images.length > 0) {
           const randomIndex = Math.floor(Math.random() * quiz.result_images.length);
           setRandomResultImage(quiz.result_images[randomIndex].image_url);
         }
 
-        sessionStorage.setItem(`quiz_result_${quiz.id}_${sessionId}`, JSON.stringify(data));
         setResult(data);
         setStep('result');
       } else {
@@ -126,11 +118,7 @@ export default function PublicQuiz() {
       }
     } catch (e: any) {
       console.error('Result fetch error', e);
-      if (e.message === 'AI_ERROR') {
-        setResultError('Hubo un problema generando tu análisis con Inteligencia Artificial. Por favor, intenta de nuevo.');
-      } else {
-        setResultError('Error de conexión al obtener tu resultado. Por favor, intenta de nuevo.');
-      }
+      setResultError('Error de conexión al obtener tu resultado. Por favor, intenta de nuevo.');
       isFetchingResult.current = false;
     } finally {
       setGeneratingResult(false);
@@ -209,18 +197,22 @@ export default function PublicQuiz() {
   if (error) return <div className="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-500">{error}</div>;
 
   let primaryColor = '#18181b'; // zinc-900 default
+  let backgroundColor = '#fafafa'; // zinc-50 default
+  let resultTitle = 'Tus Resultados';
   try {
     if (quiz?.theme) {
       const t = typeof quiz.theme === 'string' ? JSON.parse(quiz.theme) : quiz.theme;
       if (t.primaryColor) primaryColor = t.primaryColor;
+      if (t.backgroundColor) backgroundColor = t.backgroundColor;
+      if (t.resultTitle) resultTitle = t.resultTitle;
     }
   } catch (e) {}
 
   if (generatingResult) {
     return (
       <div 
-        className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-4 font-sans space-y-4"
-        style={{ '--primary-color': primaryColor } as React.CSSProperties}
+        className="min-h-screen flex flex-col items-center justify-center p-4 font-sans space-y-4"
+        style={{ '--primary-color': primaryColor, backgroundColor } as React.CSSProperties}
       >
         <Loader2 className="w-12 h-12 animate-spin" style={{ color: primaryColor }} />
         <p className="text-zinc-600 font-medium animate-pulse">Generando tu resultado...</p>
@@ -231,8 +223,8 @@ export default function PublicQuiz() {
   if (resultError) {
     return (
       <div 
-        className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-4 font-sans space-y-4"
-        style={{ '--primary-color': primaryColor } as React.CSSProperties}
+        className="min-h-screen flex flex-col items-center justify-center p-4 font-sans space-y-4"
+        style={{ '--primary-color': primaryColor, backgroundColor } as React.CSSProperties}
       >
         <div className="p-8 bg-white rounded-3xl shadow-sm border border-red-100 max-w-md w-full text-center space-y-6">
           <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -257,8 +249,8 @@ export default function PublicQuiz() {
 
   return (
     <div 
-      className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 font-sans"
-      style={{ '--primary-color': primaryColor } as React.CSSProperties}
+      className="min-h-screen flex items-center justify-center p-4 font-sans"
+      style={{ '--primary-color': primaryColor, backgroundColor } as React.CSSProperties}
     >
       <style>{`
         .theme-bg { background-color: var(--primary-color); }
@@ -335,20 +327,34 @@ export default function PublicQuiz() {
                 {quiz.questions[currentQuestionIndex].question_text}
               </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                <button
-                  onClick={() => handleAnswer(1)}
-                  className="p-6 text-center rounded-2xl theme-bg theme-bg-hover transition-all text-lg font-medium text-white active:scale-[0.98] shadow-sm"
-                >
-                  {quiz.questions[currentQuestionIndex].positive_text}
-                </button>
-                <button
-                  onClick={() => handleAnswer(0)}
-                  className="p-6 text-center rounded-2xl theme-bg theme-bg-hover transition-all text-lg font-medium text-white active:scale-[0.98] shadow-sm"
-                >
-                  {quiz.questions[currentQuestionIndex].negative_text}
-                </button>
-              </div>
+              {quiz.questions[currentQuestionIndex].question_type === 'multiple_choice' ? (
+                <div className="grid grid-cols-1 gap-4 pt-4">
+                  {(quiz.questions[currentQuestionIndex].options || []).map((opt: any, idx: number) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleAnswer(idx)}
+                      className="p-6 text-center rounded-2xl theme-bg theme-bg-hover transition-all text-lg font-medium text-white active:scale-[0.98] shadow-sm"
+                    >
+                      {typeof opt === 'string' ? opt : opt.text}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                  <button
+                    onClick={() => handleAnswer(1)}
+                    className="p-6 text-center rounded-2xl theme-bg theme-bg-hover transition-all text-lg font-medium text-white active:scale-[0.98] shadow-sm"
+                  >
+                    {quiz.questions[currentQuestionIndex].positive_text}
+                  </button>
+                  <button
+                    onClick={() => handleAnswer(0)}
+                    className="p-6 text-center rounded-2xl theme-bg theme-bg-hover transition-all text-lg font-medium text-white active:scale-[0.98] shadow-sm"
+                  >
+                    {quiz.questions[currentQuestionIndex].negative_text}
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -372,7 +378,7 @@ export default function PublicQuiz() {
                 </div>
               )}
               <div className="p-8 sm:p-10 space-y-8">
-                <h2 className="text-3xl font-semibold tracking-normal text-zinc-900">Tus Resultados</h2>
+                <h2 className="text-3xl font-semibold tracking-normal text-zinc-900">{resultTitle}</h2>
                 
                 <div className="prose prose-zinc prose-lg mx-auto text-left">
                   {result?.aiInterpretation ? (

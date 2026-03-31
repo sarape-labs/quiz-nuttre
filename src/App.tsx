@@ -61,7 +61,7 @@ const router = createBrowserRouter([
       {
         path: "quizzes/new",
         element: (
-          <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+          <ProtectedRoute allowedRoles={['superadmin', 'admin', 'asistente']}>
             <QuizEditor />
           </ProtectedRoute>
         )
@@ -69,7 +69,7 @@ const router = createBrowserRouter([
       {
         path: "quizzes/:id",
         element: (
-          <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+          <ProtectedRoute allowedRoles={['superadmin', 'admin', 'asistente']}>
             <QuizEditor />
           </ProtectedRoute>
         )

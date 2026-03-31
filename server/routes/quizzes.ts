@@ -7,6 +7,25 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// Helper to check permissions
+const checkQuizPermission = (req: express.Request, res: express.Response, quizId: string) => {
+  const user = (req as any).user;
+  if (user.rol === 'superadmin' || user.rol === 'admin') return true;
+  
+  const quiz = db.prepare('SELECT created_by FROM quizzes WHERE id = ?').get(quizId) as any;
+  if (!quiz) {
+    res.status(404).json({ error: 'Quiz not found' });
+    return false;
+  }
+  
+  if (user.rol === 'asistente' && quiz.created_by !== user.id) {
+    res.status(403).json({ error: 'No tienes permiso para modificar este quiz' });
+    return false;
+  }
+  
+  return true;
+};
+
 // Get all active quizzes
 router.get('/', (req, res) => {
   try {
@@ -40,7 +59,10 @@ router.get('/:id', (req, res) => {
     }
 
     const questionsStmt = db.prepare('SELECT * FROM questions WHERE quiz_id = ? ORDER BY order_number ASC');
-    const questions = questionsStmt.all(req.params.id);
+    const questions = questionsStmt.all(req.params.id).map((q: any) => ({
+      ...q,
+      options: q.options ? JSON.parse(q.options) : []
+    }));
 
     const resultsStmt = db.prepare('SELECT * FROM results WHERE quiz_id = ?');
     const results = resultsStmt.all(req.params.id);
@@ -56,7 +78,12 @@ router.get('/:id', (req, res) => {
 
 // Create new quiz
 router.post('/', (req, res) => {
-  let { title, subtitle, cover_image, slug, number_of_questions = 5, ai_prompt, ai_max_words = 100, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images = [] } = req.body;
+  let { title, subtitle, cover_image, slug, number_of_questions = 5, ai_prompt, ai_max_words = 100, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images = [], quiz_type = 'binary' } = req.body;
+  
+  if (ai_prompt && ai_prompt.length > 500) {
+    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 500 caracteres.' });
+  }
+
   const id = uuidv4();
 
   if (!slug || slug.trim() === '') {
@@ -65,11 +92,11 @@ router.post('/', (req, res) => {
 
   try {
     const insertQuiz = db.prepare(`
-      INSERT INTO quizzes (id, title, subtitle, cover_image, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO quizzes (id, title, subtitle, cover_image, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, quiz_type, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    insertQuiz.run(id, title, subtitle, cover_image || null, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, JSON.stringify(theme || {}), result_closing_text, result_button_text, lead_title, lead_description, lead_button_text);
+    insertQuiz.run(id, title, subtitle, cover_image || null, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, JSON.stringify(theme || {}), result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, quiz_type, (req as any).user.id);
 
     // Insert result images
     if (Array.isArray(result_images) && result_images.length > 0) {
@@ -84,12 +111,13 @@ router.post('/', (req, res) => {
 
     // Create default questions
     const insertQuestion = db.prepare(`
-      INSERT INTO questions (id, quiz_id, question_text, positive_text, negative_text, order_number)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO questions (id, quiz_id, question_text, positive_text, negative_text, order_number, question_type, options)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (let i = 1; i <= number_of_questions; i++) {
-      insertQuestion.run(uuidv4(), id, '', '', '', i);
+      const defaultOptions = quiz_type === 'multiple_choice' ? JSON.stringify([{ text: '', profile: '' }, { text: '', profile: '' }]) : '[]';
+      insertQuestion.run(uuidv4(), id, '', '', '', i, quiz_type, defaultOptions);
     }
 
     res.status(201).json({ id, message: 'Quiz created successfully' });
@@ -104,8 +132,16 @@ router.post('/', (req, res) => {
 
 // Update quiz
 router.put('/:id', (req, res) => {
-  let { title, subtitle, cover_image, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images } = req.body;
+  const quizId = req.params.id;
+
+  if (!checkQuizPermission(req, res, quizId)) return;
+
+  let { title, subtitle, cover_image, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, theme, result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, result_images, quiz_type } = req.body;
   
+  if (ai_prompt && ai_prompt.length > 500) {
+    return res.status(400).json({ error: 'El prompt de IA no puede exceder los 500 caracteres.' });
+  }
+
   if (!slug || slug.trim() === '') {
     slug = `quiz-${req.params.id.substring(0, 8)}`;
   }
@@ -113,11 +149,11 @@ router.put('/:id', (req, res) => {
   try {
     const updateQuiz = db.prepare(`
       UPDATE quizzes 
-      SET title = ?, subtitle = ?, cover_image = ?, slug = ?, number_of_questions = ?, ai_prompt = ?, ai_max_words = ?, redirect_potential = ?, redirect_not_interested = ?, theme = ?, result_closing_text = ?, result_button_text = ?, lead_title = ?, lead_description = ?, lead_button_text = ?
+      SET title = ?, subtitle = ?, cover_image = ?, slug = ?, number_of_questions = ?, ai_prompt = ?, ai_max_words = ?, redirect_potential = ?, redirect_not_interested = ?, theme = ?, result_closing_text = ?, result_button_text = ?, lead_title = ?, lead_description = ?, lead_button_text = ?, quiz_type = ?
       WHERE id = ?
     `);
     
-    updateQuiz.run(title, subtitle, cover_image || null, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, JSON.stringify(theme || {}), result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, req.params.id);
+    updateQuiz.run(title, subtitle, cover_image || null, slug, number_of_questions, ai_prompt, ai_max_words, redirect_potential, redirect_not_interested, JSON.stringify(theme || {}), result_closing_text, result_button_text, lead_title, lead_description, lead_button_text, quiz_type || 'binary', req.params.id);
 
     // Update result images
     if (result_images !== undefined) {
@@ -146,6 +182,8 @@ router.put('/:id/questions', (req, res) => {
   const { questions } = req.body;
   const quizId = req.params.id;
 
+  if (!checkQuizPermission(req, res, quizId)) return;
+
   try {
     const existingIds = questions.filter((q: any) => q.id).map((q: any) => q.id);
     
@@ -160,20 +198,24 @@ router.put('/:id/questions', (req, res) => {
 
       const updateQuestion = db.prepare(`
         UPDATE questions 
-        SET question_text = ?, positive_text = ?, negative_text = ?, order_number = ?
+        SET question_text = ?, positive_text = ?, negative_text = ?, order_number = ?, question_type = ?, options = ?
         WHERE id = ? AND quiz_id = ?
       `);
 
       const insertQuestion = db.prepare(`
-        INSERT INTO questions (id, quiz_id, question_text, positive_text, negative_text, order_number)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO questions (id, quiz_id, question_text, positive_text, negative_text, order_number, question_type, options)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const q of questions) {
+        const qType = q.question_type || 'binary';
+        const qOptions = q.options ? JSON.stringify(q.options) : '[]';
+        const pText = q.positive_text || '';
+        const nText = q.negative_text || '';
         if (q.id) {
-          updateQuestion.run(q.question_text, q.positive_text, q.negative_text, q.order_number, q.id, quizId);
+          updateQuestion.run(q.question_text, pText, nText, q.order_number, qType, qOptions, q.id, quizId);
         } else {
-          insertQuestion.run(uuidv4(), quizId, q.question_text, q.positive_text, q.negative_text, q.order_number);
+          insertQuestion.run(uuidv4(), quizId, q.question_text, pText, nText, q.order_number, qType, qOptions);
         }
       }
     })();
@@ -189,6 +231,8 @@ router.put('/:id/questions', (req, res) => {
 router.put('/:id/results', (req, res) => {
   const { results } = req.body; // Array of { combination: '10101', result_text: '...' }
   const quizId = req.params.id;
+
+  if (!checkQuizPermission(req, res, quizId)) return;
 
   try {
     const deleteResults = db.prepare('DELETE FROM results WHERE quiz_id = ?');
@@ -250,6 +294,7 @@ router.get('/:id/stats', (req, res) => {
 // Soft delete quiz (move to trash)
 router.delete('/:id', (req, res) => {
   const quizId = req.params.id;
+  if (!checkQuizPermission(req, res, quizId)) return;
   try {
     db.prepare("UPDATE quizzes SET status = 'trash' WHERE id = ?").run(quizId);
     res.json({ message: 'Quiz moved to trash' });
@@ -262,6 +307,7 @@ router.delete('/:id', (req, res) => {
 // Restore quiz
 router.put('/:id/restore', (req, res) => {
   const quizId = req.params.id;
+  if (!checkQuizPermission(req, res, quizId)) return;
   try {
     db.prepare("UPDATE quizzes SET status = 'active' WHERE id = ?").run(quizId);
     res.json({ message: 'Quiz restored successfully' });
@@ -274,6 +320,7 @@ router.put('/:id/restore', (req, res) => {
 // Permanent delete quiz
 router.delete('/:id/permanent', (req, res) => {
   const quizId = req.params.id;
+  if (!checkQuizPermission(req, res, quizId)) return;
   try {
     db.transaction(() => {
       db.prepare('DELETE FROM analytics WHERE quiz_id = ?').run(quizId);
@@ -289,8 +336,6 @@ router.delete('/:id/permanent', (req, res) => {
     res.status(500).json({ error: 'Failed to permanently delete quiz' });
   }
 });
-
-import { GoogleGenAI } from '@google/genai';
 
 // Generate AI analysis for a quiz
 router.post('/:id/ai-analysis', async (req, res) => {
@@ -313,27 +358,9 @@ router.post('/:id/ai-analysis', async (req, res) => {
       return acc;
     }, {});
 
-    const promptContext = `Analiza stats de "${quiz.title}": Aperturas:${totalOpens}, Inicios:${totalStarts}, Completados:${totalCompletes}, Leads:${totalLeads}. Respuestas/pregunta:${JSON.stringify(questionDrops)}. Da observaciones y tips de conversión en Markdown. Max 80 palabras.`;
+    const promptContext = `Analiza stats de "${quiz.title}": Aperturas:${totalOpens}, Inicios:${totalStarts}, Completados:${totalCompletes}, Leads:${totalLeads}. Respuestas/pregunta:${JSON.stringify(questionDrops)}. Da observaciones y tips de conversión en Markdown.`;
 
-    let aiInterpretation = null;
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (apiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite-preview",
-          contents: promptContext,
-          config: {
-            systemInstruction: "Eres un experto analista de datos. Responde de forma concisa en máximo 80 palabras.",
-          }
-        });
-        aiInterpretation = response.text;
-      } catch (e) {
-        console.error('AI error in backend:', e);
-      }
-    }
-
-    res.json({ promptContext, aiInterpretation });
+    res.json({ promptContext });
   } catch (error) {
     console.error('AI Analysis error:', error);
     res.status(500).json({ error: 'Failed to generate analysis' });

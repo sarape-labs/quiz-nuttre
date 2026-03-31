@@ -19,7 +19,7 @@ const THEMES = [
 ];
 
 export default function QuizEditor() {
-  const { getAuthHeaders } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
@@ -58,6 +58,8 @@ export default function QuizEditor() {
     lead_button_text: 'DESCARGAR GUÍA',
     theme: { preset: 'classic', primaryColor: '#18181b' },
     result_images: [] as any[],
+    quiz_type: 'binary',
+    created_by: '',
   });
 
   const [questions, setQuestions] = useState<any[]>([]);
@@ -80,7 +82,9 @@ export default function QuizEditor() {
         question_text: '',
         positive_text: '',
         negative_text: '',
-        order_number: i + 1
+        order_number: i + 1,
+        question_type: 'binary',
+        options: [{ text: '', profile: '' }, { text: '', profile: '' }]
       }));
       setQuestions(defaultQuestions);
       setTimeout(() => setInitialLoadDone(true), 100);
@@ -95,6 +99,13 @@ export default function QuizEditor() {
       });
       if (res.ok) {
         const data = await res.json();
+        
+        // Check permissions
+        if (user?.rol === 'asistente' && data.created_by !== user?.id) {
+          navigate('/admin');
+          return;
+        }
+
         let parsedTheme = { preset: 'classic', primaryColor: '#18181b' };
         try {
           if (data.theme) {
@@ -120,8 +131,13 @@ export default function QuizEditor() {
           lead_button_text: data.lead_button_text || 'DESCARGAR GUÍA',
           theme: parsedTheme,
           result_images: data.result_images || [],
+          quiz_type: data.quiz_type || 'binary',
+          created_by: data.created_by || '',
         });
-        setQuestions(data.questions || []);
+        setQuestions(data.questions?.map((q: any) => ({
+          ...q,
+          options: q.options ? q.options.map((opt: any) => typeof opt === 'string' ? { text: opt, profile: '' } : opt) : []
+        })) || []);
         setResults(data.results || []);
         setTimeout(() => setInitialLoadDone(true), 100);
       }
@@ -158,17 +174,32 @@ export default function QuizEditor() {
         questionRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      if (!q.positive_text.trim()) {
-        setValidationError(`La respuesta positiva de la pregunta ${i + 1} no puede estar vacía.`);
-        positiveRefs.current[i]?.focus();
-        positiveRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-      }
-      if (!q.negative_text.trim()) {
-        setValidationError(`La respuesta negativa de la pregunta ${i + 1} no puede estar vacía.`);
-        negativeRefs.current[i]?.focus();
-        negativeRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
+      if (q.question_type === 'multiple_choice') {
+        if (!q.options || q.options.length < 2) {
+          setValidationError(`La pregunta ${i + 1} debe tener al menos 2 opciones.`);
+          questionRefs.current[i]?.focus();
+          questionRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        if (q.options.some((opt: any) => !opt.text?.trim())) {
+          setValidationError(`Todas las opciones de la pregunta ${i + 1} deben tener texto.`);
+          questionRefs.current[i]?.focus();
+          questionRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      } else {
+        if (!q.positive_text.trim()) {
+          setValidationError(`La respuesta positiva de la pregunta ${i + 1} no puede estar vacía.`);
+          positiveRefs.current[i]?.focus();
+          positiveRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        if (!q.negative_text.trim()) {
+          setValidationError(`La respuesta negativa de la pregunta ${i + 1} no puede estar vacía.`);
+          negativeRefs.current[i]?.focus();
+          negativeRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
       }
     }
 
@@ -324,7 +355,7 @@ export default function QuizEditor() {
               value={quiz.title}
               onChange={e => setQuiz({...quiz, title: e.target.value})}
               className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm"
-              placeholder="Ej. Descubre tu potencial"
+              placeholder="Título de tu quiz"
             />
           </div>
           <div>
@@ -335,8 +366,23 @@ export default function QuizEditor() {
               value={quiz.slug}
               onChange={e => setQuiz({...quiz, slug: e.target.value})}
               className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm"
-              placeholder="creadorDeIngresos"
+              placeholder="SlugDeTuQuiz"
             />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-zinc-700 mb-1.5">Tipo de Quiz</label>
+            <select
+              value={quiz.quiz_type}
+              onChange={e => {
+                const newType = e.target.value;
+                setQuiz({...quiz, quiz_type: newType});
+                setQuestions(questions.map(q => ({ ...q, question_type: newType, options: q.options && q.options.length > 0 ? q.options : [{ text: '', profile: '' }, { text: '', profile: '' }] })));
+              }}
+              className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+            >
+              <option value="binary">Sí / No (Binario)</option>
+              <option value="multiple_choice">Opción Múltiple</option>
+            </select>
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-zinc-700 mb-1.5">Subtítulo</label>
@@ -417,6 +463,31 @@ export default function QuizEditor() {
               </div>
             </div>
           )}
+
+          <div className="mt-6 p-4 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center gap-4">
+            <label className="text-sm font-medium text-zinc-700">Color de Fondo (Hex):</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={quiz.theme.backgroundColor || '#fafafa'}
+                onChange={e => setQuiz({
+                  ...quiz,
+                  theme: { ...quiz.theme, backgroundColor: e.target.value }
+                })}
+                className="w-8 h-8 rounded cursor-pointer border-0 p-0"
+              />
+              <input
+                type="text"
+                value={quiz.theme.backgroundColor || '#fafafa'}
+                onChange={e => setQuiz({
+                  ...quiz,
+                  theme: { ...quiz.theme, backgroundColor: e.target.value }
+                })}
+                className="w-24 px-3 py-1.5 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm font-mono uppercase"
+                placeholder="#fafafa"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="pt-6 border-t border-zinc-100">
@@ -470,36 +541,96 @@ export default function QuizEditor() {
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-1.5">Texto Positivo (Valor 1)</label>
-                    <input
-                      ref={el => { positiveRefs.current[index] = el; }}
-                      type="text"
-                      value={q.positive_text}
-                      onChange={e => {
+                {q.question_type === 'multiple_choice' ? (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-zinc-700">Opciones de Respuesta y Resultado/Perfil</label>
+                    {(q.options || []).map((opt: any, optIndex: number) => (
+                      <div key={optIndex} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={opt.text || ''}
+                          onChange={e => {
+                            const newQ = [...questions];
+                            const newOpts = [...(newQ[index].options || [])];
+                            newOpts[optIndex] = { ...newOpts[optIndex], text: e.target.value };
+                            newQ[index].options = newOpts;
+                            setQuestions(newQ);
+                          }}
+                          className="flex-1 px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+                          placeholder={`Opción ${optIndex + 1}`}
+                        />
+                        <input
+                          type="text"
+                          value={opt.profile || ''}
+                          onChange={e => {
+                            const newQ = [...questions];
+                            const newOpts = [...(newQ[index].options || [])];
+                            newOpts[optIndex] = { ...newOpts[optIndex], profile: e.target.value };
+                            newQ[index].options = newOpts;
+                            setQuestions(newQ);
+                          }}
+                          className="w-1/3 px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+                          placeholder={`Valor (ej. Seca)`}
+                        />
+                        <button
+                          onClick={() => {
+                            const newQ = [...questions];
+                            const newOpts = [...(newQ[index].options || [])];
+                            newOpts.splice(optIndex, 1);
+                            newQ[index].options = newOpts;
+                            setQuestions(newQ);
+                          }}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => {
                         const newQ = [...questions];
-                        newQ[index].positive_text = e.target.value;
+                        const newOpts = [...(newQ[index].options || [])];
+                        newOpts.push({ text: '', profile: '' });
+                        newQ[index].options = newOpts;
                         setQuestions(newQ);
                       }}
-                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
-                    />
+                      className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900 font-medium mt-2"
+                    >
+                      <Plus className="w-4 h-4" /> Agregar Opción
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-1.5">Texto Negativo (Valor 0)</label>
-                    <input
-                      ref={el => { negativeRefs.current[index] = el; }}
-                      type="text"
-                      value={q.negative_text}
-                      onChange={e => {
-                        const newQ = [...questions];
-                        newQ[index].negative_text = e.target.value;
-                        setQuestions(newQ);
-                      }}
-                      className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
-                    />
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1.5">Texto Positivo (Valor 1)</label>
+                      <input
+                        ref={el => { positiveRefs.current[index] = el; }}
+                        type="text"
+                        value={q.positive_text}
+                        onChange={e => {
+                          const newQ = [...questions];
+                          newQ[index].positive_text = e.target.value;
+                          setQuestions(newQ);
+                        }}
+                        className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1.5">Texto Negativo (Valor 0)</label>
+                      <input
+                        ref={el => { negativeRefs.current[index] = el; }}
+                        type="text"
+                        value={q.negative_text}
+                        onChange={e => {
+                          const newQ = [...questions];
+                          newQ[index].negative_text = e.target.value;
+                          setQuestions(newQ);
+                        }}
+                        className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           ))}
@@ -507,7 +638,7 @@ export default function QuizEditor() {
           {questions.length < 10 && (
             <div className="flex justify-end pt-2">
               <button
-                onClick={() => setQuestions([...questions, { question_text: '', positive_text: '', negative_text: '', order_number: questions.length + 1 }])}
+                onClick={() => setQuestions([...questions, { question_text: '', positive_text: '', negative_text: '', order_number: questions.length + 1, question_type: quiz.quiz_type, options: [{ text: '', profile: '' }, { text: '', profile: '' }] }])}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-sm font-medium rounded-xl hover:bg-zinc-800 transition-colors shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -529,9 +660,13 @@ export default function QuizEditor() {
               value={quiz.ai_prompt}
               onChange={e => setQuiz({...quiz, ai_prompt: e.target.value})}
               rows={3}
+              maxLength={500}
               className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm"
             />
-            <p className="mt-1 text-xs text-zinc-500">Instrucciones para generar el resultado personalizado.</p>
+            <div className="mt-1 flex justify-between items-center">
+              <p className="text-xs text-zinc-500">Instrucciones para generar el resultado personalizado.</p>
+              <span className="text-xs text-zinc-400">{quiz.ai_prompt?.length || 0}/500</span>
+            </div>
           </div>
           
           <div>
@@ -577,12 +712,25 @@ export default function QuizEditor() {
           <div className="bg-zinc-50 p-6 rounded-xl border border-zinc-100 space-y-4">
             <h3 className="font-medium text-zinc-900">Pantalla de Resultados</h3>
             <div>
+              <label className="block text-sm font-medium text-zinc-700 mb-1.5">Título de Resultados</label>
+              <input
+                type="text"
+                value={quiz.theme?.resultTitle || 'Tus Resultados'}
+                onChange={e => setQuiz({
+                  ...quiz,
+                  theme: { ...quiz.theme, resultTitle: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-zinc-700 mb-1.5">Texto de Cierre</label>
               <textarea
                 value={quiz.result_closing_text}
                 onChange={e => setQuiz({...quiz, result_closing_text: e.target.value})}
-                rows={2}
-                className="w-full px-3 py-2 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white"
+                rows={7}
+                style={{ minHeight: '150px' }}
+                className="w-full px-4 py-3 border border-zinc-300 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 sm:text-sm bg-white resize-y"
               />
             </div>
             <div>

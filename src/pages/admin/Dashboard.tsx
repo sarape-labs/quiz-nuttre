@@ -8,7 +8,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 type SortOption = 'newest' | 'oldest' | 'name' | 'slug';
 
 export default function AdminDashboard() {
-  const { getAuthHeaders } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,7 +169,10 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedQuizzes.map((quiz: any) => (
+        {sortedQuizzes.map((quiz: any) => {
+          const canEdit = user?.rol === 'superadmin' || user?.rol === 'admin' || quiz.created_by === user?.id;
+          
+          return (
           <div key={quiz.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md relative group">
             {quiz.cover_image ? (
               <div className="w-full aspect-video relative bg-zinc-100 border-b border-zinc-100">
@@ -186,44 +189,64 @@ export default function AdminDashboard() {
               <p className="text-xs text-zinc-500 mt-1.5 font-mono truncate">/{quiz.slug}</p>
             </div>
             
-            <button
-              onClick={() => setDeleteModal({ isOpen: true, id: quiz.id, title: quiz.title, permanent: viewMode === 'trash' })}
-              className="absolute top-4 right-4 p-2 bg-white/80 backdrop-blur-sm text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-sm"
-              title={viewMode === 'trash' ? "Borrar Permanentemente" : "Mover a Basurero"}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setDeleteModal({ isOpen: true, id: quiz.id, title: quiz.title, permanent: viewMode === 'trash' })}
+                className="absolute top-4 right-4 p-2 bg-white/80 backdrop-blur-sm text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-sm"
+                title={viewMode === 'trash' ? "Borrar Permanentemente" : "Mover a Basurero"}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             
             <div className={`border-t border-zinc-100 bg-zinc-50/50 p-3 grid gap-1 ${viewMode === 'trash' ? 'grid-cols-2' : 'grid-cols-4'}`}>
               {viewMode === 'trash' ? (
                 <>
-                  <button
-                    onClick={() => setRestoreModal({ isOpen: true, id: quiz.id, title: quiz.title })}
-                    className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors"
-                    title="Restaurar"
-                  >
-                    <ArchiveRestore className="w-4 h-4 mb-1" />
-                    <span className="text-[10px] font-medium uppercase tracking-wider">Restaurar</span>
-                  </button>
-                  <button
-                    onClick={() => setDeleteModal({ isOpen: true, id: quiz.id, title: quiz.title, permanent: true })}
-                    className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors"
-                    title="Borrar Definitivo"
-                  >
-                    <ArchiveX className="w-4 h-4 mb-1" />
-                    <span className="text-[10px] font-medium uppercase tracking-wider">Borrar Definitivo</span>
-                  </button>
+                  {canEdit ? (
+                    <>
+                      <button
+                        onClick={() => setRestoreModal({ isOpen: true, id: quiz.id, title: quiz.title })}
+                        className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors"
+                        title="Restaurar"
+                      >
+                        <ArchiveRestore className="w-4 h-4 mb-1" />
+                        <span className="text-[10px] font-medium uppercase tracking-wider">Restaurar</span>
+                      </button>
+                      <button
+                        onClick={() => setDeleteModal({ isOpen: true, id: quiz.id, title: quiz.title, permanent: true })}
+                        className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors"
+                        title="Borrar Definitivo"
+                      >
+                        <ArchiveX className="w-4 h-4 mb-1" />
+                        <span className="text-[10px] font-medium uppercase tracking-wider">Borrar Definitivo</span>
+                      </button>
+                    </>
+                  ) : (
+                    <div className="col-span-2 text-center text-xs text-zinc-400 py-2">
+                      No tienes permisos para restaurar o borrar este quiz
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
-                  <Link
-                    to={`/admin/quizzes/${quiz.id}`}
-                    className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-zinc-200/50 text-zinc-600 transition-colors"
-                    title="Editar"
-                  >
-                    <Edit2 className="w-4 h-4 mb-1" />
-                    <span className="text-[10px] font-medium uppercase tracking-wider">Editar</span>
-                  </Link>
+                  {canEdit ? (
+                    <Link
+                      to={`/admin/quizzes/${quiz.id}`}
+                      className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-zinc-200/50 text-zinc-600 transition-colors"
+                      title="Editar"
+                    >
+                      <Edit2 className="w-4 h-4 mb-1" />
+                      <span className="text-[10px] font-medium uppercase tracking-wider">Editar</span>
+                    </Link>
+                  ) : (
+                    <div
+                      className="flex flex-col items-center justify-center p-2 rounded-lg text-zinc-300 cursor-not-allowed"
+                      title="No tienes permisos para editar"
+                    >
+                      <Edit2 className="w-4 h-4 mb-1" />
+                      <span className="text-[10px] font-medium uppercase tracking-wider">Editar</span>
+                    </div>
+                  )}
                   <Link
                     to={`/admin/quizzes/${quiz.id}/leads`}
                     className="flex flex-col items-center justify-center p-2 rounded-lg hover:bg-zinc-200/50 text-zinc-600 transition-colors"
@@ -252,7 +275,7 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
-        ))}
+        )})}
 
         {quizzes.length === 0 && (
           <div className="col-span-full py-12 text-center border-2 border-dashed border-zinc-200 rounded-2xl">

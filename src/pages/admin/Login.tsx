@@ -49,7 +49,7 @@ export default function AdminLogin() {
       >
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 p-8">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold tracking-normal text-zinc-900">Quiz</h1>
+            <h1 className="text-3xl font-bold tracking-normal text-zinc-900">Quiz V2</h1>
             <p className="text-xs text-zinc-500 mt-2 font-medium">by <span className="tracking-normal">Sarape Labs</span></p>
           </div>
 
